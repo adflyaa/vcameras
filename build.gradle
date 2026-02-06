@@ -1,0 +1,40 @@
+// Top-level build.gradle - VCamera Fixed Version
+
+buildscript {
+    ext.kotlin_version = "1.9.22"
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.3.2"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+plugins {
+    id 'com.android.application' version '8.3.2' apply false
+    id 'com.android.library' version '8.3.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+ext {
+    minSdkVersion = 21
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    buildToolsVersion = "34.0.0"
+    javaVersion = JavaVersion.VERSION_17
+    abiFilters = "armeabi-v7a,arm64-v8a"
+    localTest = false
+    isMasterPkg = true
+    hackJarName = "hack.jar"
+    versionCode = 100
+    versionName = "1.0.0"
+    masterPkg = "virtual.camera.app"
+    assistPkg = "virtual.camera.app.assist"
+}

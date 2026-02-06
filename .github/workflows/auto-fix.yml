@@ -1,0 +1,254 @@
+name: 🔧 Auto-Fix Build Configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_fix:
+        description: 'Force apply all fixes even if already correct'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - '**/*.gradle'
+      - 'gradle.properties'
+      - 'gradle/**'
+
+jobs:
+  auto-fix:
+    name: 🛠️ Auto-Fix Gradle Configuration
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+        
+    - name: 🔍 Current Configuration Check
+      id: check_config
+      run: |
+        echo "=================================================="
+        echo "📊 CURRENT CONFIGURATION ANALYSIS"
+        echo "=================================================="
+        echo ""
+        
+        # Check Gradle version
+        if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+          GRADLE_VER=$(grep "distributionUrl" gradle/wrapper/gradle-wrapper.properties | sed 's/.*gradle-\([0-9.]*\)-.*/\1/')
+          echo "current_gradle=$GRADLE_VER" >> $GITHUB_OUTPUT
+          echo "🔹 Gradle Version: $GRADLE_VER"
+        fi
+        
+        # Check Jetifier
+        if [ -f "gradle.properties" ]; then
+          if grep -q "android.enableJetifier=false" gradle.properties; then
+            echo "jetifier_status=disabled" >> $GITHUB_OUTPUT
+            echo "🔹 Jetifier: Disabled ✅"
+          else
+            echo "jetifier_status=enabled" >> $GITHUB_OUTPUT
+            echo "🔹 Jetifier: Enabled ⚠️"
+          fi
+        fi
+        
+        # Check AGP version
+        if [ -f "build.gradle" ]; then
+          AGP_VER=$(grep -E "com.android.tools.build:gradle:" build.gradle | sed 's/.*gradle:\([0-9.]*\).*/\1/' | head -1)
+          echo "current_agp=$AGP_VER" >> $GITHUB_OUTPUT
+          echo "🔹 AGP Version: $AGP_VER"
+        fi
+        
+        echo ""
+        echo "=================================================="
+        
+    - name: 🔧 Apply Auto-Fixes
+      run: |
+        echo "=================================================="
+        echo "🚀 APPLYING AUTO-FIXES"
+        echo "=================================================="
+        echo ""
+        
+        CHANGES_MADE=0
+        
+        # Fix 1: Gradle 8.8
+        echo "📦 Fix 1/4: Checking Gradle Wrapper..."
+        if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+          CURRENT=$(grep "distributionUrl" gradle/wrapper/gradle-wrapper.properties)
+          if [[ ! "$CURRENT" =~ "gradle-8.8-all.zip" ]] || [ "${{ github.event.inputs.force_fix }}" == "true" ]; then
+            sed -i 's|gradle-[0-9]\+\.[0-9]\+-all\.zip|gradle-8.8-all.zip|g' gradle/wrapper/gradle-wrapper.properties
+            sed -i 's|gradle-[0-9]\+\.[0-9]\+\.[0-9]\+-all\.zip|gradle-8.8-all.zip|g' gradle/wrapper/gradle-wrapper.properties
+            echo "✅ Gradle upgraded to 8.8"
+            CHANGES_MADE=1
+          else
+            echo "✅ Gradle already at 8.8"
+          fi
+        fi
+        echo ""
+        
+        # Fix 2: Disable Jetifier
+        echo "📦 Fix 2/4: Checking Jetifier..."
+        if [ -f "gradle.properties" ]; then
+          if ! grep -q "android.enableJetifier=false" gradle.properties || [ "${{ github.event.inputs.force_fix }}" == "true" ]; then
+            sed -i 's|android\.enableJetifier=true|android.enableJetifier=false|g' gradle.properties
+            if ! grep -q "android.enableJetifier" gradle.properties; then
+              echo "" >> gradle.properties
+              echo "# Auto-fixed by GitHub Actions" >> gradle.properties
+              echo "android.enableJetifier=false" >> gradle.properties
+            fi
+            
+            # Ensure other properties
+            if ! grep -q "android.useAndroidX=true" gradle.properties; then
+              echo "android.useAndroidX=true" >> gradle.properties
+            fi
+            if ! grep -q "android.nonTransitiveRClass" gradle.properties; then
+              echo "android.nonTransitiveRClass=false" >> gradle.properties
+            fi
+            
+            echo "✅ Jetifier disabled and properties optimized"
+            CHANGES_MADE=1
+          else
+            echo "✅ Jetifier already disabled"
+          fi
+        fi
+        echo ""
+        
+        # Fix 3: AGP 8.3.2
+        echo "📦 Fix 3/4: Checking Android Gradle Plugin..."
+        if [ -f "build.gradle" ]; then
+          CURRENT_AGP=$(grep -E "com.android.tools.build:gradle:" build.gradle | head -1)
+          if [[ ! "$CURRENT_AGP" =~ "8.3.2" ]] || [ "${{ github.event.inputs.force_fix }}" == "true" ]; then
+            sed -i 's|com\.android\.tools\.build:gradle:[0-9]\+\.[0-9]\+\.[0-9]\+|com.android.tools.build:gradle:8.3.2|g' build.gradle
+            sed -i "s|id 'com\.android\.application' version '[0-9]\+\.[0-9]\+\.[0-9]\+'|id 'com.android.application' version '8.3.2'|g" build.gradle
+            sed -i "s|id 'com\.android\.library' version '[0-9]\+\.[0-9]\+\.[0-9]\+'|id 'com.android.library' version '8.3.2'|g" build.gradle
+            echo "✅ Root build.gradle AGP updated to 8.3.2"
+            CHANGES_MADE=1
+          else
+            echo "✅ AGP already at 8.3.2"
+          fi
+        fi
+        
+        # Fix app/build.gradle if exists
+        if [ -f "app/build.gradle" ]; then
+          sed -i 's|com\.android\.tools\.build:gradle:[0-9]\+\.[0-9]\+\.[0-9]\+|com.android.tools.build:gradle:8.3.2|g' app/build.gradle 2>/dev/null || true
+        fi
+        
+        # Fix opensdk/build.gradle if exists
+        if [ -f "opensdk/build.gradle" ]; then
+          sed -i 's|com\.android\.tools\.build:gradle:[0-9]\+\.[0-9]\+\.[0-9]\+|com.android.tools.build:gradle:8.3.2|g' opensdk/build.gradle 2>/dev/null || true
+        fi
+        echo ""
+        
+        # Fix 4: settings.gradle optimization
+        echo "📦 Fix 4/4: Checking settings.gradle..."
+        if [ -f "settings.gradle" ]; then
+          if ! grep -q "pluginManagement" settings.gradle || [ "${{ github.event.inputs.force_fix }}" == "true" ]; then
+            # Backup
+            cp settings.gradle settings.gradle.bak
+            
+            # Create optimized version
+            cat > settings.gradle.new << 'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+EOF
+            # Append original includes
+            grep "include" settings.gradle.bak >> settings.gradle.new || true
+            grep "rootProject.name" settings.gradle.bak >> settings.gradle.new || true
+            
+            mv settings.gradle.new settings.gradle
+            rm settings.gradle.bak
+            
+            echo "✅ settings.gradle optimized"
+            CHANGES_MADE=1
+          else
+            echo "✅ settings.gradle already optimized"
+          fi
+        fi
+        echo ""
+        
+        echo "changes_made=$CHANGES_MADE" >> $GITHUB_ENV
+        
+        echo "=================================================="
+        echo "✅ AUTO-FIX CHECKS COMPLETED"
+        echo "=================================================="
+        
+    - name: 📊 Show Changes
+      if: env.changes_made == '1'
+      run: |
+        echo "=================================================="
+        echo "📝 FILES MODIFIED"
+        echo "=================================================="
+        git status --short
+        echo ""
+        
+    - name: 💾 Commit Changes
+      if: env.changes_made == '1'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "VCamera Auto-Fix Bot 🤖"
+        
+        git add .
+        git commit -m "🔧 Auto-fix: Build configuration updated
+
+✅ Applied fixes:
+- Gradle Wrapper: 8.8
+- Jetifier: Disabled
+- AGP: 8.3.2
+- settings.gradle: Optimized
+
+🤖 Auto-applied by GitHub Actions
+📅 $(date '+%Y-%m-%d %H:%M:%S UTC')
+🔗 Workflow: ${{ github.workflow }}
+🌿 Branch: ${{ github.ref_name }}"
+        
+        git push
+        
+        echo "✅ Changes committed and pushed successfully!"
+        
+    - name: ℹ️ No Changes Needed
+      if: env.changes_made != '1'
+      run: |
+        echo "=================================================="
+        echo "✅ CONFIGURATION ALREADY PERFECT!"
+        echo "=================================================="
+        echo ""
+        echo "All settings are already at recommended values:"
+        echo "  • Gradle: 8.8"
+        echo "  • Jetifier: Disabled"
+        echo "  • AGP: 8.3.2"
+        echo "  • settings.gradle: Optimized"
+        echo ""
+        echo "No changes needed! 🎉"
+        echo "=================================================="
+        
+    - name: 🎉 Summary
+      run: |
+        echo ""
+        echo "=================================================="
+        echo "🎊 AUTO-FIX WORKFLOW COMPLETED"
+        echo "=================================================="
+        echo ""
+        if [ "${{ env.changes_made }}" == "1" ]; then
+          echo "✅ Changes applied and committed"
+          echo "🚀 Build workflow will trigger automatically"
+        else
+          echo "✅ Configuration already perfect"
+          echo "🚀 Ready to build!"
+        fi
+        echo ""
+        echo "=================================================="

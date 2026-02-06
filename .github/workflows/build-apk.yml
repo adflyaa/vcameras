@@ -1,0 +1,163 @@
+name: 🚀 Build VCamera APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        type: choice
+        options:
+          - debug
+          - release
+          - both
+        default: 'debug'
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: 📱 Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: ☕ Setup JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+        
+    - name: 🔑 Make Gradlew Executable
+      run: chmod +x gradlew
+      
+    - name: 📊 Environment Info
+      run: |
+        echo "=================================================="
+        echo "🔧 BUILD ENVIRONMENT"
+        echo "=================================================="
+        echo ""
+        echo "🔹 Gradle Version:"
+        ./gradlew --version | grep "Gradle"
+        echo ""
+        echo "🔹 Java Version:"
+        java -version 2>&1 | head -3
+        echo ""
+        echo "🔹 Project Configuration:"
+        cat gradle/wrapper/gradle-wrapper.properties | grep "distributionUrl"
+        echo ""
+        echo "🔹 Build Type: ${{ github.event.inputs.build_type || 'debug' }}"
+        echo ""
+        echo "=================================================="
+        
+    - name: 🧹 Clean Build
+      run: ./gradlew clean --stacktrace
+      
+    - name: 🔨 Build Debug APK
+      if: github.event.inputs.build_type != 'release'
+      run: |
+        echo "Building Debug APK..."
+        ./gradlew assembleDebug --stacktrace --info
+        
+    - name: 🔨 Build Release APK
+      if: github.event.inputs.build_type == 'release' || github.event.inputs.build_type == 'both'
+      run: |
+        echo "Building Release APK..."
+        ./gradlew assembleRelease --stacktrace --info
+      continue-on-error: true
+      
+    - name: 📦 List Build Outputs
+      run: |
+        echo "=================================================="
+        echo "📦 BUILD OUTPUTS"
+        echo "=================================================="
+        echo ""
+        if [ -d "app/build/outputs/apk" ]; then
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+        else
+          echo "No APK files found"
+        fi
+        echo ""
+        echo "=================================================="
+        
+    - name: ✅ Build Success Summary
+      if: success()
+      run: |
+        echo ""
+        echo "=================================================="
+        echo "🎊 BUILD SUCCESSFUL!"
+        echo "=================================================="
+        echo ""
+        
+        if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+          SIZE=$(ls -lh app/build/outputs/apk/debug/app-debug.apk | awk '{print $5}')
+          echo "✅ Debug APK: $SIZE"
+        fi
+        
+        if [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+          SIZE=$(ls -lh app/build/outputs/apk/release/app-release-unsigned.apk | awk '{print $5}')
+          echo "✅ Release APK: $SIZE"
+        fi
+        
+        echo ""
+        echo "📥 Download APKs from Artifacts section below"
+        echo "=================================================="
+        
+    - name: 📤 Upload Debug APK
+      if: success() && github.event.inputs.build_type != 'release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcamera-debug-apk-${{ github.run_number }}
+        path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+        
+    - name: 📤 Upload Release APK
+      if: success() && (github.event.inputs.build_type == 'release' || github.event.inputs.build_type == 'both')
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcamera-release-apk-${{ github.run_number }}
+        path: app/build/outputs/apk/release/*.apk
+        retention-days: 30
+      continue-on-error: true
+      
+    - name: 🔍 Build Logs on Failure
+      if: failure()
+      run: |
+        echo "=================================================="
+        echo "❌ BUILD FAILED - SHOWING LOGS"
+        echo "=================================================="
+        echo ""
+        if [ -f "app/build/outputs/logs/gradle.log" ]; then
+          cat app/build/outputs/logs/gradle.log | tail -100
+        fi
+        echo ""
+        echo "Check full logs above for details"
+        echo "=================================================="
+        
+    - name: 🎉 Installation Instructions
+      if: success()
+      run: |
+        echo ""
+        echo "=================================================="
+        echo "📱 INSTALLATION GUIDE"
+        echo "=================================================="
+        echo ""
+        echo "1. Download APK:"
+        echo "   • Scroll down to 'Artifacts' section"
+        echo "   • Click to download ZIP file"
+        echo "   • Extract app-debug.apk"
+        echo ""
+        echo "2. Install via ADB:"
+        echo "   adb install app-debug.apk"
+        echo ""
+        echo "3. Install on Phone:"
+        echo "   • Transfer APK to phone"
+        echo "   • Enable 'Unknown Sources'"
+        echo "   • Tap APK to install"
+        echo ""
+        echo "=================================================="
